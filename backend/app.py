@@ -19,9 +19,12 @@ def get_heatmap():
     size_by = request.args.get('sizeBy')
     color_by = request.args.get('colorBy')
     
+    cities = generate_mock_heatmap_data(team, size_by, color_by)
+    team_summary = get_mock_team_summary(team, cities)  # Pass cities data
+    
     return jsonify({
-        'teamSummary': get_mock_team_summary(team),
-        'cities': generate_mock_heatmap_data(team, size_by, color_by)
+        'teamSummary': team_summary,
+        'cities': cities
     })
 
 if __name__ == '__main__':

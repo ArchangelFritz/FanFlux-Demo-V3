@@ -1,42 +1,56 @@
-import random
-
-MOCK_TEAMS = [
-    'Chicago Bulls', 'Los Angeles Lakers', 'Golden State Warriors',
-    'Boston Celtics', 'Miami Heat', 'Dallas Mavericks'
-]
-
 MOCK_INTERESTS = [
+    'Total Fan Count',  # ADD THESE THREE
+    'Avid Fan Count',
+    'Average Income',
     'Ba&sh', 'Yoga', 'Coffee', 'Tesla', 'Peloton', 'Whole Foods', 'Nike', 'Lululemon'
 ]
 
-CITIES = [
-    {'name': 'New York', 'lat': 40.7128, 'lon': -74.0060, 'state': 'NY'},
-    {'name': 'Los Angeles', 'lat': 34.0522, 'lon': -118.2437, 'state': 'CA'},
-    {'name': 'Chicago', 'lat': 41.8781, 'lon': -87.6298, 'state': 'IL'},
-    {'name': 'Houston', 'lat': 29.7604, 'lon': -95.3698, 'state': 'TX'},
-    {'name': 'Phoenix', 'lat': 33.4484, 'lon': -112.0740, 'state': 'AZ'},
-    {'name': 'Philadelphia', 'lat': 39.9526, 'lon': -75.1652, 'state': 'PA'},
-    {'name': 'Miami', 'lat': 25.7617, 'lon': -80.1918, 'state': 'FL'},
-    {'name': 'Atlanta', 'lat': 33.7490, 'lon': -84.3880, 'state': 'GA'},
-]
-
 def generate_mock_heatmap_data(team, size_by, color_by):
-    return [{
-        'cityName': city['name'],
-        'stateName': city['state'],
-        'cityLat': city['lat'],
-        'cityLon': city['lon'],
-        'sizeValue': random.randint(100, 5000),
-        'colorValue': random.randint(50, 3000),
-        'totalFanCount': random.randint(1000, 20000),
-        'avidFanCount': random.randint(200, 5000),
-        'avgIncome': random.randint(40000, 140000)
-    } for city in CITIES]
+    cities_data = []
+    for city in CITIES:
+        total_fans = random.randint(1000, 20000)
+        avid_fans = random.randint(200, 5000)
+        avg_income = random.randint(40000, 140000)
+        
+        # Determine size value based on what user selected
+        if size_by == 'Total Fan Count':
+            size_val = total_fans
+        elif size_by == 'Avid Fan Count':
+            size_val = avid_fans
+        elif size_by == 'Average Income':
+            size_val = avg_income
+        else:
+            size_val = random.randint(100, 5000)  # Interest value
+        
+        # Determine color value based on what user selected
+        if color_by == 'Total Fan Count':
+            color_val = total_fans
+        elif color_by == 'Avid Fan Count':
+            color_val = avid_fans
+        elif color_by == 'Average Income':
+            color_val = avg_income
+        else:
+            color_val = random.randint(50, 3000)  # Interest value
+        
+        cities_data.append({
+            'cityName': city['name'],
+            'stateName': city['state'],
+            'cityLat': city['lat'],
+            'cityLon': city['lon'],
+            'sizeValue': size_val,
+            'colorValue': color_val,
+            'totalFanCount': total_fans,
+            'avidFanCount': avid_fans,
+            'avgIncome': avg_income
+        })
+    
+    return cities_data
 
-def get_mock_team_summary(team):
+def get_mock_team_summary(team, cities_data):
+    # Sum across ALL cities for team-wide totals
     return {
         'teamName': team,
-        'totalFans': random.randint(1000000, 5000000),
-        'avidFans': random.randint(200000, 1000000),
-        'avgIncome': random.randint(60000, 110000)
+        'totalFans': sum(c['totalFanCount'] for c in cities_data),
+        'avidFans': sum(c['avidFanCount'] for c in cities_data),
+        'avgIncome': sum(c['avgIncome'] for c in cities_data) // len(cities_data)
     }
