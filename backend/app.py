@@ -77,32 +77,22 @@ def get_snowflake_connection():
 
 @app.route('/api/teams', methods=['GET'])
 def get_teams():
-    """Get list of unique teams with their total fan counts (FIXED: no double counting)"""
+    """Get list of unique teams (topics) with their total fan counts"""
     try:
         conn = get_snowflake_connection()
         cursor = conn.cursor()
         
-        # Correct approach: Filter where INTEREST = TEAM_NAME to get team rows only
+        # Sum fans across all cities for each topic
         query = """
         SELECT 
-            TEAM_NAME,
+            TOPIC,
             SUM(TOTAL_FAN_COUNT) as TOTAL_FANS,
             SUM(AVID_FAN_COUNT) as AVID_FANS,
             AVG(AVG_INCOME) as AVG_INCOME,
-            COUNT(DISTINCT CONCAT(CAST(CITY_LAT AS VARCHAR), ',', CAST(CITY_LON AS VARCHAR))) as NUM_CITIES
-        FROM (
-            SELECT DISTINCT 
-                TEAM_NAME,
-                CITY_LAT, 
-                CITY_LON, 
-                TOTAL_FAN_COUNT, 
-                AVID_FAN_COUNT,
-                AVG_INCOME
-            FROM TEAM_CITY_INTEREST_METRICS_FINAL_FOR_AZURE_SQL
-            WHERE TEAM_NAME = INTEREST
-        ) DISTINCT_CITY_FANS
-        GROUP BY TEAM_NAME
-        ORDER BY TEAM_NAME
+            COUNT(*) as NUM_CITIES
+        FROM VERSION3_MASTER
+        GROUP BY TOPIC
+        ORDER BY TOPIC
         """
         
         cursor.execute(query)
@@ -129,16 +119,16 @@ def get_teams():
 
 @app.route('/api/interests', methods=['GET'])
 def get_interests():
-    """Get list of unique interests"""
+    """Get list of unique interests (topics)"""
     try:
         conn = get_snowflake_connection()
         cursor = conn.cursor()
         
         query = """
-        SELECT DISTINCT INTEREST
-        FROM TEAM_CITY_INTEREST_METRICS_FINAL_FOR_AZURE_SQL
-        WHERE INTEREST IS NOT NULL
-        ORDER BY INTEREST
+        SELECT DISTINCT TOPIC
+        FROM VERSION3_MASTER
+        WHERE TOPIC IS NOT NULL
+        ORDER BY TOPIC
         """
         
         cursor.execute(query)
@@ -162,7 +152,7 @@ def get_heatmap():
         team = request.args.get('team')
         size_by = request.args.get('sizeBy')
         color_by = request.args.get('colorBy')
-        top_n = request.args.get('topN', type=int)  # NEW: Optional Top N filter
+        top_n = request.args.get('topN', type=int)
         
         if not team:
             return jsonify({'error': 'team parameter is required'}), 400
@@ -170,54 +160,46 @@ def get_heatmap():
         conn = get_snowflake_connection()
         cursor = conn.cursor()
         
-        # Build the query with filters
+        # Query for the selected team and two interests
         query = """
         SELECT 
             CITY_NAME,
             STATE_NAME,
-            CITY_LAT,
-            CITY_LON,
-            INTEREST,
+            CENTROID_LAT,
+            CENTROID_LON,
+            TOPIC,
             INTEREST_FAN_COUNT,
             TOTAL_FAN_COUNT,
             AVID_FAN_COUNT,
             AVG_INCOME
-        FROM TEAM_CITY_INTEREST_METRICS_FINAL_FOR_AZURE_SQL
-        WHERE TEAM_NAME = %s
+        FROM VERSION3_MASTER
+        WHERE TOPIC IN (%s, %s, %s)
         """
         
-        params = [team]
-        
-        # Add interest filters if provided
-        if size_by and color_by:
-            query += " AND INTEREST IN (%s, %s)"
-            params.extend([size_by, color_by])
-        elif size_by:
-            query += " AND INTEREST = %s"
-            params.append(size_by)
-        elif color_by:
-            query += " AND INTEREST = %s"
-            params.append(color_by)
+        params = [team, size_by, color_by]
         
         cursor.execute(query, params)
         rows = cursor.fetchall()
         
-        # Organize data by city
+        # Organize data by city (using lat/lon as unique identifier)
         city_data = {}
         for row in rows:
-            city_key = f"{row[0]}, {row[1]}"  # "City, State"
+            # Use centroid lat/lon as the unique key
+            lat = float(row[2]) if row[2] else 0
+            lon = float(row[3]) if row[3] else 0
+            city_key = f"{lat},{lon}"
             
             if city_key not in city_data:
                 city_data[city_key] = {
                     'city': row[0],
                     'state': row[1],
-                    'lat': float(row[2]) if row[2] else 0,
-                    'lon': float(row[3]) if row[3] else 0,
+                    'lat': lat,
+                    'lon': lon,
                     'interests': {}
                 }
             
-            interest = row[4]
-            city_data[city_key]['interests'][interest] = {
+            topic = row[4]
+            city_data[city_key]['interests'][topic] = {
                 'interestFanCount': int(row[5]) if row[5] else 0,
                 'totalFanCount': int(row[6]) if row[6] else 0,
                 'avidFanCount': int(row[7]) if row[7] else 0,
@@ -227,7 +209,7 @@ def get_heatmap():
         # Convert to list
         result = list(city_data.values())
         
-        # NEW: Apply Top N filtering if requested
+        # Apply Top N filtering if requested
         if top_n and top_n > 0 and size_by:
             # Sort by the sizeBy interest fan count
             result_with_size = []
