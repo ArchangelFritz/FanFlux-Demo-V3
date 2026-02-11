@@ -82,26 +82,27 @@ def get_teams():
         conn = get_snowflake_connection()
         cursor = conn.cursor()
         
-        # FIXED: Use lat/lon as unique city identifier to avoid duplicates
+        # FIXED: Sum fans across all cities for each team-interest combination
+        # Then take one interest's totals (they should all be the same)
         query = """
-        WITH UniqueTeamCities AS (
-            SELECT DISTINCT
+        WITH TeamInterestTotals AS (
+            SELECT 
                 TEAM_NAME,
-                CITY_LAT,
-                CITY_LON,
-                MAX(CITY_NAME) as CITY_NAME,
-                MAX(STATE_NAME) as STATE_NAME,
-                MAX(TOTAL_FAN_COUNT) as CITY_TOTAL_FANS,
-                MAX(AVID_FAN_COUNT) as CITY_AVID_FANS
+                INTEREST,
+                SUM(TOTAL_FAN_COUNT) as INTEREST_TOTAL_FANS,
+                SUM(AVID_FAN_COUNT) as INTEREST_AVID_FANS,
+                AVG(AVG_INCOME) as INTEREST_AVG_INCOME,
+                COUNT(DISTINCT CONCAT(CITY_LAT, ',', CITY_LON)) as NUM_CITIES
             FROM TEAM_CITY_INTEREST_METRICS_FINAL_FOR_AZURE_SQL
-            GROUP BY TEAM_NAME, CITY_LAT, CITY_LON
+            GROUP BY TEAM_NAME, INTEREST
         )
         SELECT 
             TEAM_NAME,
-            SUM(CITY_TOTAL_FANS) as TOTAL_FANS,
-            SUM(CITY_AVID_FANS) as AVID_FANS,
-            COUNT(*) as NUM_CITIES
-        FROM UniqueTeamCities
+            MAX(INTEREST_TOTAL_FANS) as TOTAL_FANS,
+            MAX(INTEREST_AVID_FANS) as AVID_FANS,
+            MAX(INTEREST_AVG_INCOME) as AVG_INCOME,
+            MAX(NUM_CITIES) as NUM_CITIES
+        FROM TeamInterestTotals
         GROUP BY TEAM_NAME
         ORDER BY TEAM_NAME
         """
@@ -115,7 +116,8 @@ def get_teams():
                 'name': row[0],
                 'totalFans': int(row[1]) if row[1] else 0,
                 'avidFans': int(row[2]) if row[2] else 0,
-                'numCities': int(row[3]) if row[3] else 0
+                'avgIncome': int(row[3]) if row[3] else 0,
+                'numCities': int(row[4]) if row[4] else 0
             })
         
         cursor.close()

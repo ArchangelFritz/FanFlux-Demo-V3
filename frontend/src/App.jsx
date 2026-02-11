@@ -115,14 +115,7 @@ function App() {
   const teamSummary = currentTeamData ? {
     totalFans: currentTeamData.totalFans,
     avidFans: currentTeamData.avidFans,
-    avgIncome: rawMapData ? 
-      Math.round(
-        rawMapData.reduce((sum, city) => {
-          const interests = Object.values(city.interests);
-          const avgIncome = interests.length > 0 ? interests[0].avgIncome : 0;
-          return sum + avgIncome;
-        }, 0) / rawMapData.length
-      ) : 0
+    avgIncome: currentTeamData.avgIncome || 0
   } : null;
 
   // Get list of team names for sidebar dropdown
