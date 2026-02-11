@@ -46,7 +46,8 @@ def get_snowflake_config():
         'account': os.getenv('SNOWFLAKE_ACCOUNT'),
         'warehouse': os.getenv('SNOWFLAKE_WAREHOUSE'),
         'database': os.getenv('SNOWFLAKE_DATABASE'),
-        'schema': os.getenv('SNOWFLAKE_SCHEMA')
+        'schema': os.getenv('SNOWFLAKE_SCHEMA'),
+        'client_session_keep_alive': True  # Optional
     }
     
     private_key = get_private_key_from_env()
