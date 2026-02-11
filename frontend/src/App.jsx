@@ -13,7 +13,7 @@ function App() {
   const [selectedTeam, setSelectedTeam] = useState('');
   const [sizeBy, setSizeBy] = useState('');
   const [colorBy, setColorBy] = useState('');
-  const [topN, setTopN] = useState(null); // NEW: Top N filter (null = show all)
+  const [topN, setTopN] = useState(100); // NEW: Top N filter (null = show all)
   const [rawMapData, setRawMapData] = useState(null);
   const [loading, setLoading] = useState(false);
 
