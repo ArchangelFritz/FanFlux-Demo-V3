@@ -5,7 +5,7 @@ import Sidebar from './components/Sidebar';
 import Toolbar from './components/Toolbar';
 import './App.css';
 
-const API_BASE_URL = 'https://fanflux-api-b8cxfnggbzchc7de.centralus-01.azurewebsites.net';
+const API_BASE_URL = 'https://fanflux-api-b8cxfnggbzchc7de.centralus-01.azurewebsites.net/api';
 
 function App() {
   const [teams, setTeams] = useState([]);
@@ -19,14 +19,20 @@ function App() {
   // Fetch teams and interests on mount
   useEffect(() => {
     Promise.all([
-      axios.get(`${API_URL}/teams`),
-      axios.get(`${API_URL}/interests`)
+      axios.get(`${API_BASE_URL}/teams`),
+      axios.get(`${API_BASE_URL}/interests`)
     ]).then(([teamsRes, interestsRes]) => {
-      setTeams(teamsRes.data.teams);
-      setInterests(interestsRes.data.interests);
-      setSelectedTeam(teamsRes.data.teams[0]);
-      setSizeBy(interestsRes.data.interests[0]);
-      setColorBy(interestsRes.data.interests[1]);
+      setTeams(teamsRes.data);                    // Data is array directly
+      setInterests(interestsRes.data);            // Data is array directly
+      if (teamsRes.data.length > 0) {
+        setSelectedTeam(teamsRes.data[0].name);   // Access .name property
+      }
+      if (interestsRes.data.length > 1) {
+        setSizeBy(interestsRes.data[0]);          // Already a string
+        setColorBy(interestsRes.data[1]);         // Already a string
+      }
+    }).catch(err => {
+      console.error('Error loading initial data:', err);
     });
   }, []);
 
@@ -34,10 +40,13 @@ function App() {
   useEffect(() => {
     if (selectedTeam && sizeBy && colorBy) {
       setLoading(true);
-      axios.get(`${API_URL}/heatmap`, {
+      axios.get(`${API_BASE_URL}/heatmap`, {
         params: { team: selectedTeam, sizeBy, colorBy }
       }).then(res => {
-        setMapData(res.data);
+        setMapData(res.data);                     // Data is cities array directly
+        setLoading(false);
+      }).catch(err => {
+        console.error('Error loading heatmap:', err);
         setLoading(false);
       });
     }
@@ -49,7 +58,6 @@ function App() {
         teams={teams}
         selectedTeam={selectedTeam}
         onTeamChange={setSelectedTeam}
-        teamSummary={mapData?.teamSummary}
       />
       <div className="main">
         <Toolbar 
@@ -60,9 +68,9 @@ function App() {
           onColorChange={setColorBy}
         />
         {loading ? (
-          <div className="loading">Loading...</div>
+          <div className="loading">Loading map data...</div>
         ) : (
-          <Map cities={mapData?.cities || []} />
+          <Map cities={mapData || []} />
         )}
       </div>
     </div>
