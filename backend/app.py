@@ -82,23 +82,25 @@ def get_teams():
         conn = get_snowflake_connection()
         cursor = conn.cursor()
         
-        # FIXED: Get unique city-team combinations to avoid double counting
+        # FIXED: Use lat/lon as unique city identifier to avoid duplicates
         query = """
         WITH UniqueTeamCities AS (
             SELECT DISTINCT
                 TEAM_NAME,
-                CITY_NAME,
-                STATE_NAME,
+                CITY_LAT,
+                CITY_LON,
+                MAX(CITY_NAME) as CITY_NAME,
+                MAX(STATE_NAME) as STATE_NAME,
                 MAX(TOTAL_FAN_COUNT) as CITY_TOTAL_FANS,
                 MAX(AVID_FAN_COUNT) as CITY_AVID_FANS
             FROM TEAM_CITY_INTEREST_METRICS_FINAL_FOR_AZURE_SQL
-            GROUP BY TEAM_NAME, CITY_NAME, STATE_NAME
+            GROUP BY TEAM_NAME, CITY_LAT, CITY_LON
         )
         SELECT 
             TEAM_NAME,
             SUM(CITY_TOTAL_FANS) as TOTAL_FANS,
             SUM(CITY_AVID_FANS) as AVID_FANS,
-            COUNT(DISTINCT CITY_NAME) as NUM_CITIES
+            COUNT(*) as NUM_CITIES
         FROM UniqueTeamCities
         GROUP BY TEAM_NAME
         ORDER BY TEAM_NAME
