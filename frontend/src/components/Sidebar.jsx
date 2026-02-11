@@ -1,4 +1,4 @@
-export default function Sidebar({ teams, selectedTeam, onTeamChange, teamSummary }) {
+export default function Sidebar({ teams, selectedTeam, onTeamChange, teamSummary, topN, onTopNChange }) {
     return (
       <div className="sidebar">
         <h2>Team Selector</h2>
@@ -22,6 +22,22 @@ export default function Sidebar({ teams, selectedTeam, onTeamChange, teamSummary
             <p>${teamSummary.avgIncome.toLocaleString()}</p>
           </div>
         )}
+  
+        <div className="team-stats" style={{ marginTop: '30px' }}>
+          <h3>Map Filters</h3>
+          <label>Show Top N Cities</label>
+          <select 
+            value={topN || 'all'} 
+            onChange={(e) => onTopNChange(e.target.value === 'all' ? null : parseInt(e.target.value))}
+          >
+            <option value="all">Show All Cities</option>
+            <option value="10">Top 10</option>
+            <option value="25">Top 25</option>
+            <option value="50">Top 50</option>
+            <option value="100">Top 100</option>
+            <option value="250">Top 250</option>
+          </select>
+        </div>
       </div>
     );
   }

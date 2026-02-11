@@ -13,6 +13,7 @@ function App() {
   const [selectedTeam, setSelectedTeam] = useState('');
   const [sizeBy, setSizeBy] = useState('');
   const [colorBy, setColorBy] = useState('');
+  const [topN, setTopN] = useState(null); // NEW: Top N filter (null = show all)
   const [rawMapData, setRawMapData] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -24,6 +25,7 @@ function App() {
     ]).then(([teamsRes, interestsRes]) => {
       console.log('Teams loaded:', teamsRes.data.length);
       console.log('Interests loaded:', interestsRes.data.length);
+      console.log('Sample team:', teamsRes.data[0]);
       
       setTeams(teamsRes.data);
       setInterests(interestsRes.data);
@@ -43,21 +45,38 @@ function App() {
   // Fetch heatmap data when selections change
   useEffect(() => {
     if (selectedTeam && sizeBy && colorBy) {
-      console.log('Fetching heatmap for:', selectedTeam, sizeBy, colorBy);
+      console.log('Fetching heatmap for:', {
+        team: selectedTeam,
+        sizeBy,
+        colorBy,
+        topN: topN || 'all'
+      });
+      
       setLoading(true);
       
-      axios.get(`${API_BASE_URL}/heatmap`, {
-        params: { team: selectedTeam, sizeBy, colorBy }
-      }).then(res => {
-        console.log('Heatmap data received:', res.data.length, 'cities');
-        setRawMapData(res.data);
-        setLoading(false);
-      }).catch(err => {
-        console.error('Error loading heatmap:', err);
-        setLoading(false);
-      });
+      const params = { 
+        team: selectedTeam, 
+        sizeBy, 
+        colorBy 
+      };
+      
+      // Add topN parameter if set
+      if (topN) {
+        params.topN = topN;
+      }
+      
+      axios.get(`${API_BASE_URL}/heatmap`, { params })
+        .then(res => {
+          console.log('Heatmap data received:', res.data.length, 'cities');
+          console.log('Sample city:', res.data[0]);
+          setRawMapData(res.data);
+          setLoading(false);
+        }).catch(err => {
+          console.error('Error loading heatmap:', err);
+          setLoading(false);
+        });
     }
-  }, [selectedTeam, sizeBy, colorBy]);
+  }, [selectedTeam, sizeBy, colorBy, topN]);
 
   // Transform backend data to Map component format
   const transformedCities = rawMapData?.map(city => {
@@ -65,25 +84,37 @@ function App() {
     const colorInterest = city.interests[colorBy] || {};
     
     return {
-      // Map expects these exact property names
       cityName: city.city,
       stateName: city.state,
       cityLat: city.lat,
       cityLon: city.lon,
-      // Extract interest fan counts for size and color
       sizeValue: sizeInterest.interestFanCount || 0,
       colorValue: colorInterest.interestFanCount || 0,
-      // Total fans for this city (use either interest's totalFanCount)
       totalFanCount: sizeInterest.totalFanCount || colorInterest.totalFanCount || 0
     };
   }) || [];
+
+  // Log transformed data for debugging
+  useEffect(() => {
+    if (transformedCities.length > 0) {
+      console.log('Transformed cities:', transformedCities.length);
+      console.log('Sample transformed:', transformedCities[0]);
+      console.log('Size value range:', {
+        min: Math.min(...transformedCities.map(c => c.sizeValue)),
+        max: Math.max(...transformedCities.map(c => c.sizeValue))
+      });
+      console.log('Color value range:', {
+        min: Math.min(...transformedCities.map(c => c.colorValue)),
+        max: Math.max(...transformedCities.map(c => c.colorValue))
+      });
+    }
+  }, [transformedCities]);
 
   // Get current team's stats for sidebar
   const currentTeamData = teams.find(t => t.name === selectedTeam);
   const teamSummary = currentTeamData ? {
     totalFans: currentTeamData.totalFans,
     avidFans: currentTeamData.avidFans,
-    // Calculate average income across all cities for this team
     avgIncome: rawMapData ? 
       Math.round(
         rawMapData.reduce((sum, city) => {
@@ -104,6 +135,8 @@ function App() {
         selectedTeam={selectedTeam}
         onTeamChange={setSelectedTeam}
         teamSummary={teamSummary}
+        topN={topN}
+        onTopNChange={setTopN}
       />
       <div className="main">
         <Toolbar 

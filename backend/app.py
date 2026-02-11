@@ -2,43 +2,32 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import snowflake.connector
 import os
-
-import os
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
+import base64
 
 app = Flask(__name__)
 CORS(app)
 
 def get_private_key_from_env():
-    """
-    Load private key from environment variable.
-    The key should be stored as a base64-encoded string or PEM format.
-    """
+    """Load private key from environment variable."""
     private_key_data = os.getenv('SNOWFLAKE_PRIVATE_KEY')
     
     if not private_key_data:
         return None
     
-    # If the key is base64 encoded, decode it first
-    # If it's already PEM format, use it directly
     try:
-        # Try to load as PEM directly
         if private_key_data.startswith('-----BEGIN'):
             private_key_bytes = private_key_data.encode('utf-8')
         else:
-            # Assume base64 encoded
-            import base64
             private_key_bytes = base64.b64decode(private_key_data)
         
-        # Load the private key
         private_key = serialization.load_pem_private_key(
             private_key_bytes,
             password=None,
             backend=default_backend()
         )
         
-        # Extract the key in the format Snowflake expects
         pkb = private_key.private_bytes(
             encoding=serialization.Encoding.DER,
             format=serialization.PrivateFormat.PKCS8,
@@ -50,9 +39,8 @@ def get_private_key_from_env():
         print(f"Error loading private key: {e}")
         return None
 
-# Snowflake connection config - ALL from environment variables
 def get_snowflake_config():
-    """Build Snowflake configuration, preferring key-pair auth over password"""
+    """Build Snowflake configuration"""
     config = {
         'user': os.getenv('SNOWFLAKE_USER'),
         'account': os.getenv('SNOWFLAKE_ACCOUNT'),
@@ -61,13 +49,11 @@ def get_snowflake_config():
         'schema': os.getenv('SNOWFLAKE_SCHEMA')
     }
     
-    # Try key-pair authentication first (preferred for MFA accounts)
     private_key = get_private_key_from_env()
     if private_key:
         config['private_key'] = private_key
         print("Using key-pair authentication")
     else:
-        # Fall back to password authentication
         password = os.getenv('SNOWFLAKE_PASSWORD')
         if password:
             config['password'] = password
@@ -81,7 +67,6 @@ def get_snowflake_connection():
     """Create and return a Snowflake connection"""
     config = get_snowflake_config()
     
-    # Validate required fields (except auth which is validated in get_snowflake_config)
     required_vars = ['user', 'account', 'warehouse', 'database', 'schema']
     missing = [var for var in required_vars if not config.get(var)]
     
@@ -92,19 +77,29 @@ def get_snowflake_connection():
 
 @app.route('/api/teams', methods=['GET'])
 def get_teams():
-    """Get list of unique teams with their total fan counts"""
+    """Get list of unique teams with their total fan counts (FIXED: no double counting)"""
     try:
         conn = get_snowflake_connection()
         cursor = conn.cursor()
         
-        # Query to get unique teams with aggregated metrics
+        # FIXED: Get unique city-team combinations to avoid double counting
         query = """
+        WITH UniqueTeamCities AS (
+            SELECT DISTINCT
+                TEAM_NAME,
+                CITY_NAME,
+                STATE_NAME,
+                MAX(TOTAL_FAN_COUNT) as CITY_TOTAL_FANS,
+                MAX(AVID_FAN_COUNT) as CITY_AVID_FANS
+            FROM TEAM_CITY_INTEREST_METRICS_FINAL_FOR_AZURE_SQL
+            GROUP BY TEAM_NAME, CITY_NAME, STATE_NAME
+        )
         SELECT 
             TEAM_NAME,
-            SUM(TOTAL_FAN_COUNT) as TOTAL_FANS,
-            SUM(AVID_FAN_COUNT) as AVID_FANS,
-            SUM(INTEREST_FAN_COUNT) as INTEREST_FANS
-        FROM TEAM_CITY_INTEREST_METRICS_FINAL_FOR_AZURE_SQL
+            SUM(CITY_TOTAL_FANS) as TOTAL_FANS,
+            SUM(CITY_AVID_FANS) as AVID_FANS,
+            COUNT(DISTINCT CITY_NAME) as NUM_CITIES
+        FROM UniqueTeamCities
         GROUP BY TEAM_NAME
         ORDER BY TEAM_NAME
         """
@@ -118,7 +113,7 @@ def get_teams():
                 'name': row[0],
                 'totalFans': int(row[1]) if row[1] else 0,
                 'avidFans': int(row[2]) if row[2] else 0,
-                'interestFans': int(row[3]) if row[3] else 0
+                'numCities': int(row[3]) if row[3] else 0
             })
         
         cursor.close()
@@ -160,11 +155,12 @@ def get_interests():
 
 @app.route('/api/heatmap', methods=['GET'])
 def get_heatmap():
-    """Get heatmap data filtered by team and interests"""
+    """Get heatmap data filtered by team and interests with Top N filtering"""
     try:
         team = request.args.get('team')
         size_by = request.args.get('sizeBy')
         color_by = request.args.get('colorBy')
+        top_n = request.args.get('topN', type=int)  # NEW: Optional Top N filter
         
         if not team:
             return jsonify({'error': 'team parameter is required'}), 400
@@ -229,6 +225,23 @@ def get_heatmap():
         # Convert to list
         result = list(city_data.values())
         
+        # NEW: Apply Top N filtering if requested
+        if top_n and top_n > 0 and size_by:
+            # Sort by the sizeBy interest fan count
+            result_with_size = []
+            for city in result:
+                if size_by in city['interests']:
+                    city['_sort_value'] = city['interests'][size_by]['interestFanCount']
+                    result_with_size.append(city)
+            
+            # Sort descending and take top N
+            result_with_size.sort(key=lambda x: x['_sort_value'], reverse=True)
+            result = result_with_size[:top_n]
+            
+            # Remove temporary sort field
+            for city in result:
+                del city['_sort_value']
+        
         cursor.close()
         conn.close()
         
@@ -239,6 +252,5 @@ def get_heatmap():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    # Use PORT environment variable for Azure, default to 5000 locally
     port = int(os.getenv('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
