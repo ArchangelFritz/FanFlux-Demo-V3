@@ -3,29 +3,92 @@ from flask_cors import CORS
 import snowflake.connector
 import os
 
+import os
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+
 app = Flask(__name__)
 CORS(app)
 
+def get_private_key_from_env():
+    """
+    Load private key from environment variable.
+    The key should be stored as a base64-encoded string or PEM format.
+    """
+    private_key_data = os.getenv('SNOWFLAKE_PRIVATE_KEY')
+    
+    if not private_key_data:
+        return None
+    
+    # If the key is base64 encoded, decode it first
+    # If it's already PEM format, use it directly
+    try:
+        # Try to load as PEM directly
+        if private_key_data.startswith('-----BEGIN'):
+            private_key_bytes = private_key_data.encode('utf-8')
+        else:
+            # Assume base64 encoded
+            import base64
+            private_key_bytes = base64.b64decode(private_key_data)
+        
+        # Load the private key
+        private_key = serialization.load_pem_private_key(
+            private_key_bytes,
+            password=None,
+            backend=default_backend()
+        )
+        
+        # Extract the key in the format Snowflake expects
+        pkb = private_key.private_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        )
+        
+        return pkb
+    except Exception as e:
+        print(f"Error loading private key: {e}")
+        return None
+
 # Snowflake connection config - ALL from environment variables
-SNOWFLAKE_CONFIG = {
-    'user': os.getenv('SNOWFLAKE_USER'),
-    'password': os.getenv('SNOWFLAKE_PASSWORD'),
-    'account': os.getenv('SNOWFLAKE_ACCOUNT'),
-    'warehouse': os.getenv('SNOWFLAKE_WAREHOUSE'),
-    'database': os.getenv('SNOWFLAKE_DATABASE'),
-    'schema': os.getenv('SNOWFLAKE_SCHEMA')
-}
+def get_snowflake_config():
+    """Build Snowflake configuration, preferring key-pair auth over password"""
+    config = {
+        'user': os.getenv('SNOWFLAKE_USER'),
+        'account': os.getenv('SNOWFLAKE_ACCOUNT'),
+        'warehouse': os.getenv('SNOWFLAKE_WAREHOUSE'),
+        'database': os.getenv('SNOWFLAKE_DATABASE'),
+        'schema': os.getenv('SNOWFLAKE_SCHEMA')
+    }
+    
+    # Try key-pair authentication first (preferred for MFA accounts)
+    private_key = get_private_key_from_env()
+    if private_key:
+        config['private_key'] = private_key
+        print("Using key-pair authentication")
+    else:
+        # Fall back to password authentication
+        password = os.getenv('SNOWFLAKE_PASSWORD')
+        if password:
+            config['password'] = password
+            print("Using password authentication")
+        else:
+            raise ValueError("Neither SNOWFLAKE_PRIVATE_KEY nor SNOWFLAKE_PASSWORD is set")
+    
+    return config
 
 def get_snowflake_connection():
     """Create and return a Snowflake connection"""
-    # Validate all required environment variables are set
-    required_vars = ['user', 'password', 'account', 'warehouse', 'database', 'schema']
-    missing = [var for var in required_vars if not SNOWFLAKE_CONFIG.get(var)]
+    config = get_snowflake_config()
+    
+    # Validate required fields (except auth which is validated in get_snowflake_config)
+    required_vars = ['user', 'account', 'warehouse', 'database', 'schema']
+    missing = [var for var in required_vars if not config.get(var)]
     
     if missing:
         raise ValueError(f"Missing required Snowflake environment variables: {', '.join([f'SNOWFLAKE_{v.upper()}' for v in missing])}")
     
-    return snowflake.connector.connect(**SNOWFLAKE_CONFIG)
+    return snowflake.connector.connect(**config)
 
 @app.route('/api/teams', methods=['GET'])
 def get_teams():
