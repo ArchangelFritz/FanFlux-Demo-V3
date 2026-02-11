@@ -5,7 +5,7 @@ import Sidebar from './components/Sidebar';
 import Toolbar from './components/Toolbar';
 import './App.css';
 
-const API_URL = 'http://localhost:5000/api';
+const API_BASE_URL = 'https://fanflux-api-b8cxfnggbzchc7de.centralus-01.azurewebsites.net';
 
 function App() {
   const [teams, setTeams] = useState([]);
