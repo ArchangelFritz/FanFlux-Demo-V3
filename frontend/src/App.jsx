@@ -13,7 +13,7 @@ function App() {
   const [selectedTeam, setSelectedTeam] = useState('');
   const [sizeBy, setSizeBy] = useState('');
   const [colorBy, setColorBy] = useState('');
-  const [mapData, setMapData] = useState(null);
+  const [rawMapData, setRawMapData] = useState(null);
   const [loading, setLoading] = useState(false);
 
   // Fetch teams and interests on mount
@@ -22,14 +22,18 @@ function App() {
       axios.get(`${API_BASE_URL}/teams`),
       axios.get(`${API_BASE_URL}/interests`)
     ]).then(([teamsRes, interestsRes]) => {
-      setTeams(teamsRes.data);                    // Data is array directly
-      setInterests(interestsRes.data);            // Data is array directly
+      console.log('Teams loaded:', teamsRes.data.length);
+      console.log('Interests loaded:', interestsRes.data.length);
+      
+      setTeams(teamsRes.data);
+      setInterests(interestsRes.data);
+      
       if (teamsRes.data.length > 0) {
-        setSelectedTeam(teamsRes.data[0].name);   // Access .name property
+        setSelectedTeam(teamsRes.data[0].name);
       }
       if (interestsRes.data.length > 1) {
-        setSizeBy(interestsRes.data[0]);          // Already a string
-        setColorBy(interestsRes.data[1]);         // Already a string
+        setSizeBy(interestsRes.data[0]);
+        setColorBy(interestsRes.data[1]);
       }
     }).catch(err => {
       console.error('Error loading initial data:', err);
@@ -39,11 +43,14 @@ function App() {
   // Fetch heatmap data when selections change
   useEffect(() => {
     if (selectedTeam && sizeBy && colorBy) {
+      console.log('Fetching heatmap for:', selectedTeam, sizeBy, colorBy);
       setLoading(true);
+      
       axios.get(`${API_BASE_URL}/heatmap`, {
         params: { team: selectedTeam, sizeBy, colorBy }
       }).then(res => {
-        setMapData(res.data);                     // Data is cities array directly
+        console.log('Heatmap data received:', res.data.length, 'cities');
+        setRawMapData(res.data);
         setLoading(false);
       }).catch(err => {
         console.error('Error loading heatmap:', err);
@@ -52,12 +59,51 @@ function App() {
     }
   }, [selectedTeam, sizeBy, colorBy]);
 
+  // Transform backend data to Map component format
+  const transformedCities = rawMapData?.map(city => {
+    const sizeInterest = city.interests[sizeBy] || {};
+    const colorInterest = city.interests[colorBy] || {};
+    
+    return {
+      // Map expects these exact property names
+      cityName: city.city,
+      stateName: city.state,
+      cityLat: city.lat,
+      cityLon: city.lon,
+      // Extract interest fan counts for size and color
+      sizeValue: sizeInterest.interestFanCount || 0,
+      colorValue: colorInterest.interestFanCount || 0,
+      // Total fans for this city (use either interest's totalFanCount)
+      totalFanCount: sizeInterest.totalFanCount || colorInterest.totalFanCount || 0
+    };
+  }) || [];
+
+  // Get current team's stats for sidebar
+  const currentTeamData = teams.find(t => t.name === selectedTeam);
+  const teamSummary = currentTeamData ? {
+    totalFans: currentTeamData.totalFans,
+    avidFans: currentTeamData.avidFans,
+    // Calculate average income across all cities for this team
+    avgIncome: rawMapData ? 
+      Math.round(
+        rawMapData.reduce((sum, city) => {
+          const interests = Object.values(city.interests);
+          const avgIncome = interests.length > 0 ? interests[0].avgIncome : 0;
+          return sum + avgIncome;
+        }, 0) / rawMapData.length
+      ) : 0
+  } : null;
+
+  // Get list of team names for sidebar dropdown
+  const teamNames = teams.map(t => t.name);
+
   return (
     <div className="app">
       <Sidebar 
-        teams={teams}
+        teams={teamNames}
         selectedTeam={selectedTeam}
         onTeamChange={setSelectedTeam}
+        teamSummary={teamSummary}
       />
       <div className="main">
         <Toolbar 
@@ -70,7 +116,7 @@ function App() {
         {loading ? (
           <div className="loading">Loading map data...</div>
         ) : (
-          <Map cities={mapData || []} />
+          <Map cities={transformedCities} />
         )}
       </div>
     </div>
