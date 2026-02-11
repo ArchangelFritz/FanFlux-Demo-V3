@@ -24,12 +24,6 @@ export default function Map({ cities }) {
 
     console.log('Rendering', cities.length, 'cities on map');
 
-    // Clear existing markers
-    const markers = document.getElementsByClassName('mapboxgl-marker');
-    while (markers[0]) {
-      markers[0].remove();
-    }
-
     // Calculate min/max for normalization
     const sizeValues = cities.map(c => c.sizeValue).filter(v => v > 0);
     const colorValues = cities.map(c => c.colorValue).filter(v => v > 0);
@@ -42,43 +36,141 @@ export default function Map({ cities }) {
     console.log('Size range:', minSize, '-', maxSize);
     console.log('Color range:', minColor, '-', maxColor);
 
-    // Normalize function: map value to 0-1 range
+    // Normalize function
     const normalize = (value, min, max) => {
       if (max === min) return 0.5;
       return (value - min) / (max - min);
     };
 
-    // Add new markers
-    cities.forEach(city => {
-      // Normalize size (0-1), then scale to pixel range (5-50px)
-      const normalizedSize = normalize(city.sizeValue, minSize, maxSize);
-      const size = 5 + (normalizedSize * 45); // 5px to 50px range
+    // Convert cities to GeoJSON
+    const geojsonData = {
+      type: 'FeatureCollection',
+      features: cities.map(city => {
+        const normalizedSize = normalize(city.sizeValue, minSize, maxSize);
+        const normalizedColor = normalize(city.colorValue, minColor, maxColor);
+        
+        return {
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [city.cityLon, city.cityLat]
+          },
+          properties: {
+            cityName: city.cityName,
+            stateName: city.stateName,
+            totalFanCount: city.totalFanCount,
+            sizeValue: city.sizeValue,
+            colorValue: city.colorValue,
+            // Normalized values for rendering
+            circleRadius: 5 + (normalizedSize * 20), // 5-25 pixels
+            circleOpacity: 0.3 + (normalizedColor * 0.7) // 0.3-1.0
+          }
+        };
+      })
+    };
 
-      // Normalize color (0-1) for opacity
-      const normalizedColor = normalize(city.colorValue, minColor, maxColor);
-      const opacity = 0.3 + (normalizedColor * 0.7); // 0.3 to 1.0 range
+    // Wait for map to load
+    map.current.on('load', () => {
+      // Remove existing source and layers if they exist
+      if (map.current.getSource('cities')) {
+        map.current.removeLayer('cities-layer');
+        map.current.removeSource('cities');
+      }
 
-      const el = document.createElement('div');
-      el.className = 'marker';
-      el.style.width = `${size}px`;
-      el.style.height = `${size}px`;
-      el.style.backgroundColor = `rgba(255, 100, 100, ${opacity})`;
-      el.style.borderRadius = '50%';
-      el.style.border = '2px solid rgba(255, 255, 255, 0.8)';
-      el.style.cursor = 'pointer';
+      // Add source
+      map.current.addSource('cities', {
+        type: 'geojson',
+        data: geojsonData
+      });
 
-      new mapboxgl.Marker(el)
-        .setLngLat([city.cityLon, city.cityLat])
-        .setPopup(new mapboxgl.Popup({ offset: 25 }).setHTML(`
-          <div style="color: black; padding: 5px;">
-            <strong>${city.cityName}, ${city.stateName}</strong><br/>
-            <strong>Total Fans:</strong> ${city.totalFanCount.toLocaleString()}<br/>
-            <strong>Size Value:</strong> ${city.sizeValue.toLocaleString()}<br/>
-            <strong>Color Value:</strong> ${city.colorValue.toLocaleString()}
-          </div>
-        `))
-        .addTo(map.current);
+      // Add layer
+      map.current.addLayer({
+        id: 'cities-layer',
+        type: 'circle',
+        source: 'cities',
+        paint: {
+          'circle-radius': ['get', 'circleRadius'],
+          'circle-color': '#ff6464',
+          'circle-opacity': ['get', 'circleOpacity'],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': 'rgba(255, 255, 255, 0.8)'
+        }
+      });
+
+      // Add click popup
+      map.current.on('click', 'cities-layer', (e) => {
+        const props = e.features[0].properties;
+        new mapboxgl.Popup()
+          .setLngLat(e.lngLat)
+          .setHTML(`
+            <div style="color: black; padding: 5px;">
+              <strong>${props.cityName}, ${props.stateName}</strong><br/>
+              <strong>Total Fans:</strong> ${parseInt(props.totalFanCount).toLocaleString()}<br/>
+              <strong>Size Value:</strong> ${parseInt(props.sizeValue).toLocaleString()}<br/>
+              <strong>Color Value:</strong> ${parseInt(props.colorValue).toLocaleString()}
+            </div>
+          `)
+          .addTo(map.current);
+      });
+
+      // Change cursor on hover
+      map.current.on('mouseenter', 'cities-layer', () => {
+        map.current.getCanvas().style.cursor = 'pointer';
+      });
+
+      map.current.on('mouseleave', 'cities-layer', () => {
+        map.current.getCanvas().style.cursor = '';
+      });
     });
+
+    // If map already loaded, update data directly
+    if (map.current.isStyleLoaded()) {
+      if (map.current.getSource('cities')) {
+        map.current.getSource('cities').setData(geojsonData);
+      } else {
+        // Map loaded but source doesn't exist yet
+        map.current.addSource('cities', {
+          type: 'geojson',
+          data: geojsonData
+        });
+
+        map.current.addLayer({
+          id: 'cities-layer',
+          type: 'circle',
+          source: 'cities',
+          paint: {
+            'circle-radius': ['get', 'circleRadius'],
+            'circle-color': '#ff6464',
+            'circle-opacity': ['get', 'circleOpacity'],
+            'circle-stroke-width': 2,
+            'circle-stroke-color': 'rgba(255, 255, 255, 0.8)'
+          }
+        });
+
+        map.current.on('click', 'cities-layer', (e) => {
+          const props = e.features[0].properties;
+          new mapboxgl.Popup()
+            .setLngLat(e.lngLat)
+            .setHTML(`
+              <div style="color: black; padding: 5px;">
+                <strong>${props.cityName}, ${props.stateName}</strong><br/>
+                <strong>Total Fans:</strong> ${parseInt(props.totalFanCount).toLocaleString()}<br/>
+                <strong>Size Value:</strong> ${parseInt(props.sizeValue).toLocaleString()}<br/>
+                <strong>Color Value:</strong> ${parseInt(props.colorValue).toLocaleString()}
+              </div>
+            `)
+            .addTo(map.current);
+        });
+
+        map.current.on('mouseenter', 'cities-layer', () => {
+          map.current.getCanvas().style.cursor = 'pointer';
+        });
+
+        map.current.on('mouseleave', 'cities-layer', () => {
+          map.current.getCanvas().style.cursor = '';
+        });
+      }
+    }
   }, [cities]);
 
   return <div ref={mapContainer} className="map-container" />;
