@@ -207,8 +207,16 @@ def get_heatmap():
         conn = get_snowflake_connection()
         cursor = conn.cursor()
         
-        # Query for the selected team and two interests
-        query = """
+        # Build list of topics to query
+        # When "Average Income" is selected, we just need the team row (it has avgIncome)
+        topics = {team}
+        if size_by != 'Average Income':
+            topics.add(size_by)
+        if color_by != 'Average Income':
+            topics.add(color_by)
+        
+        placeholders = ', '.join(['%s'] * len(topics))
+        query = f"""
         SELECT 
             CITY_NAME,
             STATE_NAME,
@@ -220,10 +228,9 @@ def get_heatmap():
             AVID_FAN_COUNT,
             AVG_INCOME
         FROM VERSION3_MASTER
-        WHERE TOPIC IN (%s, %s, %s)
+        WHERE TOPIC IN ({placeholders})
         """
-        
-        params = [team, size_by, color_by]
+        params = list(topics)
         
         cursor.execute(query, params)
         rows = cursor.fetchall()

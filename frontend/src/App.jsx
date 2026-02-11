@@ -13,7 +13,7 @@ function App() {
   const [selectedTeam, setSelectedTeam] = useState('');
   const [sizeBy, setSizeBy] = useState('');
   const [colorBy, setColorBy] = useState('');
-  const [topN, setTopN] = useState(100); // NEW: Top N filter (null = show all)
+  const [topN, setTopN] = useState(null); // NEW: Top N filter (null = show all)
   const [rawMapData, setRawMapData] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -28,7 +28,7 @@ function App() {
       console.log('Sample team:', teamsRes.data[0]);
       
       setTeams(teamsRes.data);
-      setInterests(interestsRes.data);
+      setInterests(['Average Income', ...interestsRes.data]); // Add Average Income as first option
       
       if (teamsRes.data.length > 0) {
         setSelectedTeam(teamsRes.data[0].name);
@@ -56,8 +56,8 @@ function App() {
       
       const params = { 
         team: selectedTeam, 
-        sizeBy, 
-        colorBy 
+        sizeBy: sizeBy === 'Average Income' ? selectedTeam : sizeBy,
+        colorBy: colorBy === 'Average Income' ? selectedTeam : colorBy
       };
       
       // Add topN parameter if set
@@ -80,17 +80,31 @@ function App() {
 
   // Transform backend data to Map component format
   const transformedCities = rawMapData?.map(city => {
-    const sizeInterest = city.interests[sizeBy] || {};
-    const colorInterest = city.interests[colorBy] || {};
+    // Get values for size and color
+    const getSizeValue = () => {
+      if (sizeBy === 'Average Income') {
+        // Get avg income from the team row
+        return city.interests[selectedTeam]?.avgIncome || 0;
+      }
+      return city.interests[sizeBy]?.interestFanCount || 0;
+    };
+
+    const getColorValue = () => {
+      if (colorBy === 'Average Income') {
+        // Get avg income from the team row
+        return city.interests[selectedTeam]?.avgIncome || 0;
+      }
+      return city.interests[colorBy]?.interestFanCount || 0;
+    };
     
     return {
       cityName: city.city,
       stateName: city.state,
       cityLat: city.lat,
       cityLon: city.lon,
-      sizeValue: sizeInterest.interestFanCount || 0,
-      colorValue: colorInterest.interestFanCount || 0,
-      totalFanCount: sizeInterest.totalFanCount || colorInterest.totalFanCount || 0
+      sizeValue: getSizeValue(),
+      colorValue: getColorValue(),
+      totalFanCount: city.interests[selectedTeam]?.totalFanCount || 0
     };
   }) || [];
 
