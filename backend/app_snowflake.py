@@ -1,30 +1,43 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import snowflake.connector
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
 import os
 
 app = Flask(__name__)
 CORS(app)
 
-# Snowflake connection config - ALL from environment variables
+# Load private key
+def load_private_key():
+    """Load the private key from file"""
+    key_path = os.path.expanduser('~/snowflake_key.p8')
+    with open(key_path, 'rb') as key_file:
+        private_key = serialization.load_pem_private_key(
+            key_file.read(),
+            password=None,
+            backend=default_backend()
+        )
+    
+    pkb = private_key.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    return pkb
+
+# Snowflake connection config
 SNOWFLAKE_CONFIG = {
-    'user': os.getenv('SNOWFLAKE_USER'),
-    'password': os.getenv('SNOWFLAKE_PASSWORD'),
-    'account': os.getenv('SNOWFLAKE_ACCOUNT'),
-    'warehouse': os.getenv('SNOWFLAKE_WAREHOUSE'),
-    'database': os.getenv('SNOWFLAKE_DATABASE'),
-    'schema': os.getenv('SNOWFLAKE_SCHEMA')
+    'user': 'FANFLUX',
+    'account': 'KXZRGCU-PN74371',
+    'warehouse': 'COMPUTE_WH',
+    'database': 'FANFLUX',
+    'schema': 'V3',
+    'private_key': load_private_key()
 }
 
 def get_snowflake_connection():
     """Create and return a Snowflake connection"""
-    # Validate all required environment variables are set
-    required_vars = ['user', 'password', 'account', 'warehouse', 'database', 'schema']
-    missing = [var for var in required_vars if not SNOWFLAKE_CONFIG.get(var)]
-    
-    if missing:
-        raise ValueError(f"Missing required Snowflake environment variables: {', '.join([f'SNOWFLAKE_{v.upper()}' for v in missing])}")
-    
     return snowflake.connector.connect(**SNOWFLAKE_CONFIG)
 
 @app.route('/api/teams', methods=['GET'])
@@ -176,6 +189,4 @@ def get_heatmap():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    # Use PORT environment variable for Azure, default to 5000 locally
-    port = int(os.getenv('PORT', 5000))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    app.run(debug=True, host='0.0.0.0', port=5000)
