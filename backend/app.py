@@ -82,27 +82,25 @@ def get_teams():
         conn = get_snowflake_connection()
         cursor = conn.cursor()
         
-        # FIXED: Sum fans across all cities for each team-interest combination
-        # Then take one interest's totals (they should all be the same)
+        # Correct approach: Filter where INTEREST = TEAM_NAME to get team rows only
         query = """
-        WITH TeamInterestTotals AS (
-            SELECT 
-                TEAM_NAME,
-                INTEREST,
-                SUM(TOTAL_FAN_COUNT) as INTEREST_TOTAL_FANS,
-                SUM(AVID_FAN_COUNT) as INTEREST_AVID_FANS,
-                AVG(AVG_INCOME) as INTEREST_AVG_INCOME,
-                COUNT(DISTINCT CONCAT(CITY_LAT, ',', CITY_LON)) as NUM_CITIES
-            FROM TEAM_CITY_INTEREST_METRICS_FINAL_FOR_AZURE_SQL
-            GROUP BY TEAM_NAME, INTEREST
-        )
         SELECT 
             TEAM_NAME,
-            MAX(INTEREST_TOTAL_FANS) as TOTAL_FANS,
-            MAX(INTEREST_AVID_FANS) as AVID_FANS,
-            MAX(INTEREST_AVG_INCOME) as AVG_INCOME,
-            MAX(NUM_CITIES) as NUM_CITIES
-        FROM TeamInterestTotals
+            SUM(TOTAL_FAN_COUNT) as TOTAL_FANS,
+            SUM(AVID_FAN_COUNT) as AVID_FANS,
+            AVG(AVG_INCOME) as AVG_INCOME,
+            COUNT(DISTINCT CONCAT(CAST(CITY_LAT AS VARCHAR), ',', CAST(CITY_LON AS VARCHAR))) as NUM_CITIES
+        FROM (
+            SELECT DISTINCT 
+                TEAM_NAME,
+                CITY_LAT, 
+                CITY_LON, 
+                TOTAL_FAN_COUNT, 
+                AVID_FAN_COUNT,
+                AVG_INCOME
+            FROM TEAM_CITY_INTEREST_METRICS_FINAL_FOR_AZURE_SQL
+            WHERE TEAM_NAME = INTEREST
+        ) DISTINCT_CITY_FANS
         GROUP BY TEAM_NAME
         ORDER BY TEAM_NAME
         """
